@@ -1,0 +1,121 @@
+import torch
+import numpy as np
+
+class AgentUtilityFunction:
+    def __init__(self, agent_id, other_agent_ids, alphas, betas,
+                 group_assignments,
+                 same_group_weight=1.0,
+                 scaling_factor=1.0,
+                 nonlinear_transform=None,  # <-- Updated: flexible transform
+                 device="cpu", dtype=torch.float32,
+                 center_gamma=None, center_point=(5.0, 5.0)):
+        """
+        Initializes the utility function for a single agent.
+
+        Args:
+            nonlinear_transform (str or None): Type of non-linear transform to apply.
+                Options: None, "square", "tanh", "sigmoid".
+        """
+        self.agent_id = agent_id
+        self.other_agent_ids = other_agent_ids
+        self.device = device
+        self.dtype = dtype
+
+        self.alphas = {k: torch.tensor(v, device=device, dtype=dtype) for k, v in alphas.items()}
+        self.betas = {k: torch.tensor(v, device=device, dtype=dtype) for k, v in betas.items()}
+        self.scaling_factor = torch.tensor(scaling_factor, device=device, dtype=dtype)
+
+        self.group_assignments = group_assignments
+        self.same_group_weight = same_group_weight
+
+        self.center_gamma = torch.tensor(center_gamma, device=device, dtype=dtype) if center_gamma is not None else None
+        self.center_point = torch.tensor(center_point, device=device, dtype=dtype)
+
+        self.nonlinear_transform = nonlinear_transform  # <-- NEW
+
+        assert set(self.other_agent_ids) == set(self.alphas.keys()) == set(self.betas.keys()), \
+            "Mismatch between other_agent_ids, alphas, and betas keys."
+
+    def compute_utility(self, positions):
+        """
+        Computes the utility of this agent based on current positions.
+        """
+        p_i = positions[self.agent_id]
+        utility = torch.tensor(0.0, device=self.device, dtype=self.dtype)
+
+        for j in self.other_agent_ids:
+            p_j = positions[j]
+            d_ij = torch.norm(p_i - p_j)
+            alpha_ij = self.alphas[j]
+            beta_ij = self.betas[j]
+
+            # Determine weight
+            if self.group_assignments[self.agent_id] == self.group_assignments[j]:
+                weight = self.same_group_weight
+            else:
+                weight = 1.0
+
+            # Weighted interaction
+            interaction = (torch.exp(-alpha_ij * d_ij) - torch.exp(-beta_ij * d_ij))
+            utility += weight * interaction
+
+        # Add center attraction if enabled
+        if self.center_gamma is not None:
+            d_center = torch.norm(p_i - self.center_point)
+            utility += 10 * torch.exp(-self.center_gamma * d_center)
+
+        # Apply non-linear transform if requested
+        if self.nonlinear_transform is not None:
+            if self.nonlinear_transform == "square":
+                utility = utility ** 2
+            elif self.nonlinear_transform == "tanh":
+                utility = torch.tanh(utility)
+            elif self.nonlinear_transform == "sigmoid":
+                utility = torch.sigmoid(utility)
+            else:
+                raise ValueError(f"Unknown nonlinear transform: {self.nonlinear_transform}")
+
+        return self.scaling_factor * utility
+
+    def compute_optimal_distance(self, j):
+        """
+        Analytically compute the ideal distance between two agents.
+        """
+        alpha = self.alphas[j]
+        beta = self.betas[j]
+        return torch.log(alpha / beta) / (alpha - beta)
+        
+def compute_agent_gradients(agent_utility_functions, positions):
+    """
+    Computes the gradient of each agent's utility with respect to its own position.
+
+    Args:
+        agent_utility_functions (dict): Mapping agent_id -> AgentUtilityFunction object.
+        positions (dict): Mapping agent_id -> torch.tensor([x, y]) with requires_grad=True.
+
+    Returns:
+        dict: Mapping agent_id -> gradient tensor (same shape as position [2]).
+    """
+    gradients = {}
+
+    # Zero out any existing gradients first
+    for pos in positions.values():
+        if pos.grad is not None:
+            pos.grad.zero_()
+
+    for agent_id, utility_fn in agent_utility_functions.items():
+        # Compute the utility
+        utility = utility_fn.compute_utility(positions)
+        
+        # Compute gradient wrt own position
+        utility.backward(retain_graph=True)
+
+        gradients[agent_id] = positions[agent_id].grad.clone()
+
+        # Important: Zero gradients again for next agent
+        for pos in positions.values():
+            if pos.grad is not None:
+                pos.grad.zero_()
+
+    return gradients
+
