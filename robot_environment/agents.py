@@ -84,38 +84,3 @@ class AgentUtilityFunction:
         alpha = self.alphas[j]
         beta = self.betas[j]
         return torch.log(alpha / beta) / (alpha - beta)
-        
-def compute_agent_gradients(agent_utility_functions, positions):
-    """
-    Computes the gradient of each agent's utility with respect to its own position.
-
-    Args:
-        agent_utility_functions (dict): Mapping agent_id -> AgentUtilityFunction object.
-        positions (dict): Mapping agent_id -> torch.tensor([x, y]) with requires_grad=True.
-
-    Returns:
-        dict: Mapping agent_id -> gradient tensor (same shape as position [2]).
-    """
-    gradients = {}
-
-    # Zero out any existing gradients first
-    for pos in positions.values():
-        if pos.grad is not None:
-            pos.grad.zero_()
-
-    for agent_id, utility_fn in agent_utility_functions.items():
-        # Compute the utility
-        utility = utility_fn.compute_utility(positions)
-        
-        # Compute gradient wrt own position
-        utility.backward(retain_graph=True)
-
-        gradients[agent_id] = positions[agent_id].grad.clone()
-
-        # Important: Zero gradients again for next agent
-        for pos in positions.values():
-            if pos.grad is not None:
-                pos.grad.zero_()
-
-    return gradients
-

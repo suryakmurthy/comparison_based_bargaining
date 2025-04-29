@@ -1,26 +1,14 @@
-import torch
+import os
+import time
+import math
+import random
+
 import numpy as np
+import torch
 import matplotlib.pyplot as plt
 import matplotlib.animation as animation
-import random
 
-import time
-from environment import ContinuousRobotEnv
 from agents import AgentUtilityFunction
-from solution_concepts import solve_nash_bargaining_formation, estimate_disagreement_utilities
-import torch
-import random
-import math
-
-import matplotlib.pyplot as plt
-import numpy as np
-import os
-import os
-import matplotlib.pyplot as plt
-import numpy as np
-
-
-import numpy as np
 
 
 def compute_nash_objective(agent_utilities, positions):
@@ -41,10 +29,6 @@ def compute_nash_objective(agent_utilities, positions):
             raise ValueError(f"Non-positive utility encountered for agent {i}.")
         utilities.append(torch.log(u_i))
     return torch.sum(torch.stack(utilities))
-
-import os
-import numpy as np
-import matplotlib.pyplot as plt
 
 def save_initial_final_side_by_side(history, space_size=10.0, save_dir="plots", label="run"):
     """
@@ -166,19 +150,7 @@ def set_random_seed(seed=42):
     torch.manual_seed(seed)
 
 def compute_optimal_distance(alpha, beta):
-    alpha = torch.tensor(alpha, dtype=torch.float32)
-    beta = torch.tensor(beta, dtype=torch.float32)
-    return torch.log(beta / alpha) / (beta - alpha)
-import math
-import torch
-import random
-
-def compute_optimal_distance(alpha, beta):
     return math.log(beta / alpha) / (beta - alpha)
-import math
-import torch
-import random
-import numpy as np
 
 def initialize_agents_in_circle(num_agents=10, center=(5.0, 5.0), radius=2.0):
     """
@@ -287,138 +259,6 @@ def generate_grouped_agents_and_distances(num_agents=10, space_size=10.0, scalin
 
     return agent_utilities, desired_optimal_distances, initial_positions
 
-def optimize_two_agents(alpha=3.1462, beta=1.0, 
-                         p0=(2.0, 3.0), p1=(8.0, 7.0),
-                         steps=500, lr=0.05, space_size=10.0,
-                         save_gif_path=None):
-    """
-    Optimize two agents to maximize Agent 0's utility by moving both agents separately.
-    """
-
-    device = "cpu"
-
-    # Set up initial positions
-    positions = {
-        0: torch.tensor(p0, dtype=torch.float32, device=device, requires_grad=True),
-        1: torch.tensor(p1, dtype=torch.float32, device=device, requires_grad=True)
-    }
-
-    # Set up utility function (only Agent 0 matters)
-    agent_utility = AgentUtilityFunction(
-        agent_id=0,
-        other_agent_ids=[1],
-        alphas={1: alpha},
-        betas={1: beta},
-        device=device
-    )
-
-    history = []
-
-    for step in range(steps):
-        # Zero gradients
-        for pos in positions.values():
-            if pos.grad is not None:
-                pos.grad.zero_()
-
-        # Compute utility
-        pair_positions = {0: positions[0], 1: positions[1]}
-        utility = agent_utility.compute_utility(pair_positions)
-
-        # Backward
-        utility.backward()
-
-        # Update each agent separately
-        with torch.no_grad():
-            for i in [0, 1]:
-                positions[i] += lr * positions[i].grad
-                positions[i].clamp_(0.0, space_size)
-        final_distance = torch.norm(positions[0] - positions[1])
-        print("Final Distance:", final_distance.item(), "Expected Optimal:", compute_optimal_distance(alpha, beta))
-
-
-        # Re-enable gradient tracking
-        for i in [0, 1]:
-            positions[i] = positions[i].detach().requires_grad_(True)
-
-        # Save history
-        full_state = torch.cat([positions[0], positions[1]])
-        history.append(full_state.detach().cpu().numpy())
-
-    print("Optimization complete!")
-    final_distance = torch.norm(positions[0] - positions[1])
-    print("Final Distance:", final_distance.item(), "Expected Optimal:", compute_optimal_distance(alpha, beta))
-
-    if save_gif_path is not None:
-        create_simple_animation(history, space_size, save_path=save_gif_path)
-
-    return history
-    
-def optimize_agents_nash_prev(agent_utilities,
-                         initial_positions,
-                         steps=1000,
-                         lr=0.01,
-                         space_size=10.0,
-                         save_gif_path=None):
-    """
-    Optimize agent positions using Nash Bargaining Solution (NBS),
-    using per-agent gradient accumulation (NO torch.cat).
-    """
-    device = "cpu"
-    agent_ids = sorted(initial_positions.keys())
-    num_agents = len(agent_ids)
-
-    # Initialize positions
-    positions = {
-        i: torch.tensor(initial_positions[i], dtype=torch.float32, device=device, requires_grad=True)
-        for i in agent_ids
-    }
-
-    history = []
-
-    for step in range(steps):
-        # Prepare per-agent gradient accumulators
-        grad_sum = {i: torch.zeros_like(positions[i]) for i in agent_ids}
-
-        # Current positions
-        current_positions = {i: positions[i] for i in agent_ids}
-
-        # Compute per-agent contributions
-        for i in agent_ids:
-            u_i = agent_utilities[i].compute_utility(current_positions)
-
-            if u_i.item() <= 0:
-                raise ValueError(f"Non-positive utility encountered at step {step} for agent {i}.")
-
-            grads = torch.autograd.grad(
-                outputs=u_i,
-                inputs=[positions[j] for j in agent_ids],
-                retain_graph=True,
-                create_graph=False
-            )
-            # grads is a tuple: grad of u_i w.r.t each agent's position
-
-            # Accumulate (1/u_i) * grad(u_i) into grad_sum
-            for j, grad_ij in zip(agent_ids, grads):
-                grad_sum[j] += (1.0 / u_i) * grad_ij
-        # print("gradient_sum: ", grad_sum)
-        # Now, apply gradient ascent step per agent
-        with torch.no_grad():
-            for i in agent_ids:
-                positions[i] += lr * grad_sum[i]
-                positions[i].clamp_(0.0, space_size)  # Keep within bounds
-
-        # Re-enable gradient tracking
-        for i in agent_ids:
-            positions[i] = positions[i].detach().requires_grad_(True)
-
-        # Save history
-        full_state = torch.cat([positions[i] for i in agent_ids])
-        history.append(full_state.detach().cpu().numpy())
-
-    print("Optimization complete!")
-
-    return history
-
 def optimize_agents_nash(agent_utilities,
                          initial_positions,
                          steps=500,
@@ -475,8 +315,6 @@ def optimize_agents_nash(agent_utilities,
         grad_norm = total_grad.norm()
         if grad_norm > 1e-8:
             total_grad /= grad_norm
-        if step == steps - 1 :
-            print("Final Gradients: ", total_grad)
         # Update positions
         with torch.no_grad():
             full_state = torch.cat([positions[i] for i in agent_ids])
@@ -490,10 +328,6 @@ def optimize_agents_nash(agent_utilities,
         history.append(full_state.cpu().numpy())
 
     print("Optimization complete!")
-    final_distance = torch.norm(positions[0] - positions[1])
-    print("Nash Final Distance:", positions[0], positions[1], final_distance.item(),
-          "Expected Optimal:", agent_utilities[0].compute_optimal_distance(1),
-          agent_utilities[1].compute_optimal_distance(0))
 
     return history
 
@@ -588,8 +422,6 @@ def optimize_agents_our_solution(agent_utilities,
                 if norm_sum[i] > 0:
                     positions[i] += lr * (grad_sum[i] / norm_sum[i])
                     positions[i].clamp_(0.0, space_size)
-        if step == steps - 1 :
-            print("Final Gradients: ", grad_sum)
         # Re-enable gradient tracking
         for i in agent_ids:
             positions[i] = positions[i].detach().requires_grad_(True)
@@ -599,9 +431,7 @@ def optimize_agents_our_solution(agent_utilities,
         history.append(full_state.detach().cpu().numpy())
 
     print("Optimization complete!")
-    final_distance = torch.norm(positions[0] - positions[1])
-    print("Ours Final Distance:", positions[0], positions[1], final_distance.item(), "Expected Optimal:", agent_utilities[0].compute_optimal_distance(1), agent_utilities[1].compute_optimal_distance(0))
-
+    
     return history
 
 
