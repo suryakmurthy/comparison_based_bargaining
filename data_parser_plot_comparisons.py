@@ -7,14 +7,12 @@ file_path = "solution_concept_nash_comparisons_results.json"
 with open(file_path, 'r') as f:
     data = json.load(f)
 
-def euclidean_distance(a, b):
-    return np.linalg.norm(np.array(a) - np.array(b))
-
 def markowitz_utility(w, Sigma, lambda_mu):
     w = np.array(w)
     Sigma = np.array(Sigma)
     lambda_mu = np.array(lambda_mu)
     return np.dot(w, np.dot(Sigma, w)) - np.dot(lambda_mu, w)
+
 
 def compute_spread(final_points):
     """
@@ -81,8 +79,8 @@ num_agents = ["2", "3", "5", "10", "20"]
 num_stocks = ["5", "10", "20", "50"]
 
 # Iterate and plot
-for a in num_agents:
-    for s in num_stocks:
+for a in num_agents_list:
+    for s in num_stocks_list:
         if a not in data or s not in data[a]:
             continue
 
@@ -94,36 +92,12 @@ for a in num_agents:
         nash_final_points = []  # list of nbs_simplex points for "nash"
         nash_final_points_zeroth = []
         ours_final_points_comparisons = []
-
-        distance_ours_comparisons = []
-        distance_nash_comparisons = []
-
-        distance_ours_nash = []
-        distance_ours_comp_nash_zeroth = []
-
-        number_of_queries_ours = []
-        number_of_queries_nash = []
         for entry in data[a][s]:
             (
-                Sigma_set_list, lambda_mu_set_list, _, _, _, _, query_count_ours, query_count_nbs, _, _, _,
+                Sigma_set_list, lambda_mu_set_list, _, _, _, _, _, _, _, _, _,
                 state_progression_ours, state_progression_ours_comparisons,
                 state_progression_nash, state_progression_nash_zeroth
             ) = entry
-
-            number_of_queries_ours.append(query_count_ours)
-            number_of_queries_nash.append(query_count_nbs)
-
-            final_point_ours = state_progression_ours[-1]
-            final_point_ours_comparisons = state_progression_ours_comparisons[-1]
-
-            final_point_nbs = state_progression_nash[-1]
-            final_point_nbs_zeroth = state_progression_nash_zeroth[-1]
-            
-            distance_ours_comparisons.append(euclidean_distance(final_point_ours, final_point_ours_comparisons))
-            distance_nash_comparisons.append(euclidean_distance(final_point_nbs, final_point_nbs_zeroth))
-            distance_ours_nash.append(euclidean_distance(final_point_ours, final_point_nbs))
-            distance_ours_comp_nash_zeroth.append(euclidean_distance(final_point_ours_comparisons, final_point_nbs_zeroth))
-
             ours_final_points.append(state_progression_ours[-1])
             nash_final_points.append(state_progression_nash[-1])
             ours_final_points_comparisons.append(state_progression_ours_comparisons[-1])
@@ -140,13 +114,35 @@ for a in num_agents:
         our_spread_comparisons = compute_spread(ours_final_points_comparisons)
         nash_spread = compute_spread(nash_final_points)
         nash_spread_zeroth_order = compute_spread(nash_final_points_zeroth)
-        print(f"→ Avg dist to NBS (solution space): {np.mean(distance_ours_nash):.10f}")
-        print(f"→ Std dev. dist to NBS (solution space): {np.std(distance_ours_nash):.10f}")
+        print("Collecting data for: ", a, s)
+        print(f"Ours Spread: {our_spread:.6f}")
+        print(f"Ours Spread Comparisons: {our_spread_comparisons:.6f}")
+        print(f"Nash Spread: {nash_spread:.6f}")
+        print(f"Nash Spread Zeroth: {nash_spread_zeroth_order:.6f}")
+        # print("Collecting data for: ", a, s)
+        avg_ours = process_multiple_progressions(progression_ours, Sigma_list_all, Lambda_list_all)
+        # print("Collected average for ours")
+        avg_comparisons = process_multiple_progressions(progression_comparisons, Sigma_list_all, Lambda_list_all)
+        # print("Collected average for comparisons")
 
-        print(f"→ Avg dist between Our Solution and Our Solution With Comparisons (solution space): {np.mean(distance_ours_comparisons):.10f}")
-        print(f"→ Std dev. dist between Our Solution and Our Solution With Comparisons (solution space): {np.std(distance_ours_comparisons):.10f}")
-        
-        print(f"→ Avg dist between Nash Solution and the Nash Solution With a Zeroth Order Oracle (solution space): {np.mean(distance_nash_comparisons):.10f}")
-        print(f"→ Std dev. dist between Nash Solution and the Nash Solution With a Zeroth Order Oracle (solution space): {np.std(distance_nash_comparisons):.10f}")
+        avg_nash = process_multiple_progressions(progression_nash, Sigma_list_all, Lambda_list_all)
+        # print("Collected average for nash")
 
-        print("-" * 60)
+        avg_zeroth = process_multiple_progressions(progression_zeroth, Sigma_list_all, Lambda_list_all)
+        # print("Collected average for nash zeroth")
+
+        # Plot
+        plt.figure()
+        x = np.arange(1000)
+        plt.plot(x, avg_ours, label="Ours")
+        plt.plot(x, avg_comparisons, label="Ours + Comparisons")
+        plt.plot(x, avg_nash, label="Nash")
+        plt.plot(x, avg_zeroth, label="Nash + Zeroth-Order")
+        plt.title(f"Average Utility Progression ({a} Agents, {s} Stocks)")
+        plt.xlabel("Iteration")
+        plt.ylabel("Average Agent Utility")
+        plt.legend()
+        plt.grid(True)
+        plt.tight_layout()
+        plt.savefig(f"utility_progression_agents_{a}_stocks_{s}_with_comparisons.png", dpi=300)
+        plt.close()

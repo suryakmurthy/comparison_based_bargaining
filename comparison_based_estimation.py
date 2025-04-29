@@ -1,6 +1,4 @@
 import torch
-from helper_functions import from_subspace_to_simplex, angle_between, compute_simplex_gradient, from_subspace_to_simplex_batch, from_simplex_to_subspace, project_gradient_to_simplex_tangent
-import time
 
 def query(Sigma, lambda_mu, current_state, offer):
     """
@@ -38,11 +36,8 @@ def barrier_batch(w_batch, v_batch):
         penalty_values = -torch.sum(torch.log(w_valid + eps), dim=1) \
                          - torch.log(one - v_valid.sum(dim=1) + eps)
 
-        # 🔒 force dtype just to be absolutely sure
+        # force dtype just to be absolutely sure
         penalty_values = penalty_values.to(dtype=dtype)
-
-        # 🔍 debug print
-        # print(f"penalties dtype: {penalties.dtype}, penalty_values dtype: {penalty_values.dtype}")
 
         penalties[valid_mask] = penalty_values
 
@@ -63,10 +58,6 @@ def query_batch(Sigma, lambda_mu, current_state, offer_batch):
     """
     Q, d = offer_batch.shape
     device = offer_batch.device
-    # print("Checking current state: ", current_state.shape)
-    # Expand current_state to batch
-    # print("Checking current state: ", current_state.shape)
-    # time.sleep(100)
     new_states = current_state.unsqueeze(0) + offer_batch  # [Q, d]
 
     # Transform current_state (single vector) to simplex once

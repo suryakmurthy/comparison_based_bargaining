@@ -4,7 +4,7 @@ import json
 import numpy as np
 import concurrent.futures
 from helper_functions import sample_from_simplex, sample_random_ranges_and_lambdas, sample_investor_windows_and_lambdas, setup_markowitz_environment_cached
-from solution_concepts import solve_markowitz, run_our_solution_concept_actual, run_our_solution_concept_comparisons, solve_nbs_first_order_simplex, solve_nbs_zeroth_order, run_our_solution_concept_comparisons_parallel, run_our_solution_concept_comparisons_parallel_sign_opt
+from solution_concepts import solve_markowitz, run_our_solution_concept_actual, solve_nbs_first_order_simplex, solve_nbs_zeroth_order, run_our_solution_concept_comparisons_parallel_sign_opt
 
 def single_test_run(num_agents, n, seed_offset=0):
     base_seed = 42 + seed_offset
